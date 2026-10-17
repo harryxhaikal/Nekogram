@@ -1,0 +1,73 @@
+
+name: Build Nekogram Custom
+
+on:
+  push:
+    branches:
+      - feature/telethon-import
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platforms;android-37.0
+            build-tools;37.0.0
+            ndk;27.3.13750724
+            cmake;3.22.1
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure Project
+        shell: bash
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          FIREBASE_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          : "${TG_API_ID:?Missing TG_API_ID}"
+          : "${TG_API_HASH:?Missing TG_API_HASH}"
+          : "${FIREBASE_B64:?Missing Firebase JSON}"
+
+          printf 'apiId=%s\napiHash=%s\nhelperBotId=0\nhelperBotUsername=\nsentryDsn=\nmapsApiKey=\n' \
+            "$TG_API_ID" "$TG_API_HASH" > local.properties
+
+          printf '%s' "$FIREBASE_B64" | base64 -d \
+            > TMessagesProj_App/google-services.json
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :TMessagesProj_App:assembleDebug \
+            --no-daemon \
+            --max-workers=2 \
+            -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nekogram-Custom-Debug
+          path: TMessagesProj_App/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
